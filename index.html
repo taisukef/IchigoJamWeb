@@ -1,0 +1,528 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"/>
+<meta name="viewport" content="target-densitydpi=low-dpi, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black"/><!-- default / black / black-translucent -->
+<meta name="format-detection" content="telephone=no"/>
+<title>IchigoJam LIST</title>
+<link rel="apple-touch-icon" href="http://fukuno.jig.jp/app/IchigoJam/ss.png"/>
+<meta property="og:image" content="http://fukuno.jig.jp/app/IchigoJam/ss.png"/>
+<script src="lib/fukuno.js"></script>
+<script>"use strict";
+
+var TinyBasic = function() {
+	// token
+	var TOKEN_NULL = 0;
+	var TOKEN_NUMBER = 1;
+	var TOKEN_VAR = 2;
+	
+	// op (bit2=｢<｣, bit1=｢=｣, bit0=｢>｣)
+	var TOKEN_EQ = 0x12	// 0b10010	; =
+	var TOKEN_NEQ = 0x15	// 0b10101	; <> ><
+	var TOKEN_LTE = 0x16	// 0b10110	; <=
+	var TOKEN_LT = 0x14	// 0b10100	; <
+	var TOKEN_GTE = 0x13	// 0b10011	; >=
+	var TOKEN_GT = 0x11	// 0b10001	; >
+	var TOKEN_OPMIN = 0x11	// 0b10001	; min
+	var TOKEN_OPMAX = 0x16	// 0b10110	; max
+
+	// 記号
+	var TOKEN_STRING = 	0x20	// "
+	var TOKEN_COMMA = 		0x21	// ,
+	var TOKEN_SEMICOLON =  0x22	// ;
+	var TOKEN_PLUS = 		0x23	// +
+	var TOKEN_MINUS = 	0x24	// -
+	var TOKEN_ASTER = 		0x25	// *
+	var TOKEN_SLASH = 		0x26	// /
+	var TOKEN_PERCENT = 	0x27	// %
+	var TOKEN_PAREN_B = 	0x28	// (
+	var TOKEN_PAREN_E = 	0x29	// )
+	var TOKEN_ARRAY_B = 	0x2A	// [
+	var TOKEN_PAREN_E = 	0x2B	// ]
+	var TOKEN_AND = 		0x2C	// &
+	var TOKEN_OR = 		0x2D	// |
+	var TOKEN_XOR = 		0x2E	// ^
+	var TOKEN_SHIFT_R = 	0x2F	// >>
+	var TOKEN_SHIFT_L = 	0x30	// <<
+
+	// コマンド 0x40-
+	var TOKEN_REM = 		0x40;
+	var TOKEN_LED = 		0x41;
+	var TOKEN_CLS = 		0x42;
+
+	// keyword
+	var KEYWORD = [
+		[	"'",		TOKEN_REM		],
+		[	"\"",		TOKEN_STRING	],
+		[	",",		TOKEN_COMMA		],
+		[	";",		TOKEN_SEMICOLON	],
+		[	"+",		TOKEN_PLUS		],
+		[	"-",		TOKEN_MINUS		],
+		[	"*",		TOKEN_ASTER		],
+		[	"/",		TOKEN_SLASH		],
+		[	"%",		TOKEN_PERCENT	],
+	//	[	"MOD",		TOKEN_PERCENT	],
+		[	"&",		TOKEN_AND		],
+		[	"|",		TOKEN_OR		],
+		[	"^",		TOKEN_XOR		],
+		[	">>",		TOKEN_SHIFT_R	 ],
+		[	"<<",		TOKEN_SHIFT_L	 ],
+		[	"(",		TOKEN_PAREN_B	],
+		[	")",		TOKEN_PAREN_E	],
+		[	"[",		TOKEN_ARRAY_B	],
+		[	"]",		TOKEN_PAREN_E	],
+		[	"==",		TOKEN_EQ		],
+		[	"=",		TOKEN_EQ		],
+		[	"<>",		TOKEN_NEQ		],
+		[	"><",		TOKEN_NEQ		],
+		[	"!=",		TOKEN_NEQ		],
+		[	"<=",		TOKEN_LTE		],
+		[	"<",		TOKEN_LT		],
+		[	">=",		TOKEN_GTE		],
+		[	">",		TOKEN_GT		],
+
+		[	"LED",	TOKEN_LED		],
+		[	"CLS",	TOKEN_CLS		],
+	];
+	// err
+	var ERR_NOERR = 0;
+	var ERR_SYNTAX = 1;
+	
+	// parser
+	this.line = 0;
+	this.p = 0; // pos
+	this.cmd = null;
+	this.setProgram = function(s) {
+		this.cmd = [];
+		for (var i = 0; i < s.length; i++)
+			this.cmd.push(s.charCodeAt(i));
+		this.cmd.push(0);
+		this.p = 0;
+	};
+	this.toUpperCase = function(c) {
+		if (c >= 'a'.charCodeAt(0) && c <= 'z'.charCodeAt(0))
+			return c + ('A'.charCodeAt(0) - 'a'.charCodeAt(0));
+		return c;
+	};
+	this.tokenGetChar = function() {
+		for (;;) {
+			var c = this.cmd[this.p];
+			if (c == 0 || c > 32) {
+				c = this.toUpperCase(c);
+				if (c == ':'.charCodeAt(0) || c == '\''.charCodeAt(0))
+					c = 0;
+				return c;
+			}
+			this.p++;
+		}
+	};
+	this.tokentop = 0;
+	this.tokenGet = function() {
+		var token = { code: 0, value: 0 };
+		var c = this.tokenGetChar();
+		this.tokentop = this.p;
+		if (c == 0) {
+			token.code = TOKEN_NULL;
+		} else if (c >= '0'.charCodeAt(0) && c <= '9'.charCodeAt(0)) {
+			// number
+			token.code = TOKEN_NUMBER;
+			token.value = 0;
+			for (;;) {
+				var a = token.value * 10 + (c - '0'.charCodeAt(0));
+				token.value = a & 0xffff;
+				this.p++;
+				c = this.tokenGetChar();
+				if (c < '0'.charCodeAt(0) || c > '9'.charCodeAt(0))
+					break;
+			}
+		} else {
+			for (var i = 0; i < KEYWORD.length; i++) {
+				this.p = this.tokentop;
+				var word = KEYWORD[i][0];
+				for (var j = 0; j <= word.length; j++) {
+					if (j == word.length) {
+						token.code = KEYWORD[i][1];
+						return token;
+					}
+					var c2 = word.charCodeAt(j);
+					if (this.tokenGetChar() != c2)
+						break;
+					this.p++;
+				}
+			}
+			// var
+			this.p = this.tokentop;
+			c = this.tokenGetChar();
+			if (c >= 'A'.charCodeAt(0) && c <= 'Z'.charCodeAt(0)) {
+				this.p++;
+				token.code = TOKEN_VAR;
+				token.value = c - 'A'.charCodeAt(0);
+			} else {
+				token.code = TOKEN_ERROR;
+			}
+		}
+		return token;
+	};
+	var tokenBack = function() {
+		this.p = this.tokentop;
+	};
+	//
+	this.err = 0;
+	this.execute = function(s) {
+		this.setProgram(s);
+		this.err = 0;
+		for (;;) {
+			if (!this.cmd)
+				break;
+			var c = this.tokenGetChar();
+			if (c == ':'.charCodeAt(0)) {
+				this.p++;
+				continue;
+			} else if (c == '\''.charCodeAt(0)) {
+				cmd_rem(p);
+			} else if (c == 0) {
+				// 次の行
+				break;
+			}
+			var token = this.tokenGet();
+			switch (token.code) {
+				case TOKEN_NULL: break;
+//				case TOKEN_NUMBER: this.edit(token.value); return 2;
+				case TOKEN_LED: this.cmd_led(); break;
+				case TOKEN_CLS: this.cmd_cls(); break;
+				default: this.setError(ERR_SYNTAX); break;
+ 			}
+			if (this.err)
+				return 3;
+		}
+		return 0;
+	};
+	this.edit = function(num) {
+//		alert("edit " + num + " " + s);
+		this.setError(ERR_SYNTAX);
+	};
+	this.setError = function(n) {
+		this.err = n;
+		this.errmes = "Syntax error";
+	};
+	// command
+	this.cmd_rem = function() {
+		this.p = this.cmd.length - 1;
+	};
+	this.cmd_led = function() {
+//		var n = this.expression();
+		var t = this.tokenGet();
+		if (t.code != TOKEN_NUMBER)
+			this.setError(ERR_SYNTAX);
+		this.io.led(t.value);
+//		this.check_end();
+	};
+	this.cmd_cls = function() {
+		this.io.cls();
+	};
+	this.cmd_wait = function() {
+		alert("wait");
+	};
+};
+
+window.onload = function() {
+	var ledio;
+	
+	var tinybasic = new TinyBasic();
+	
+	var c = get("canvas");
+	var g = getContext(c);
+	setUI(c);
+	
+	var dots = [];
+	var dw = 36;
+	var dh = 27;
+	
+	var mx = -1;
+	var my = -1;
+	
+	var clearDots = function() {
+		for (var i = 0; i < dh; i++) {
+			for (var j = 0; j < dw; j++) {
+				dots[j + i * dw] = 0;
+			}
+		}
+	};
+	clearDots();
+	
+	var ox = 0;
+	var oy = 0;
+	var tw;
+	
+	var font = ichigojamfont.split("\n");
+	
+	var bfont = [];
+	for (var j = 0; j < font.length; j++) {
+		var code = font[j];
+		var bf = [];
+		for (var i = 0; i < 8; i++) {
+			var n = parseInt(code.substring(i * 2, i * 2 + 2), 16);
+			bf.push(n);
+		}
+		bfont.push(bf);
+	}
+	var drawChar2 = function(g, c, x, y, w, h) {
+		var code = font[c];
+		var r = w / 8;
+		for (var i = 0; i < 8; i++) {
+			var n = parseInt(code.substring(i * 2, i * 2 + 2), 16);
+			for (var j = 0; j < 8; j++) {
+				if (n & (1 << (7 - j))) {
+					g.setColor(255, 255, 255);
+				} else {
+					g.setColor(0, 0, 0);
+				}
+				g.fillRect(x + j * r, y + i * r, r, r);
+			}
+		}
+	};
+	var drawChar = function(g, c, x, y, w, h) {
+		var code = bfont[c];
+		var r = w / 8;
+		g.setColor(255, 255, 255);
+		for (var i = 0; i < 8; i++) {
+			var n = code[i];
+			for (var j = 0; j < 8; j++) {
+				if (n & (1 << (7 - j))) {
+					g.fillRect(x + j * r, y + i * r, r, r);
+				} else {
+		//			g.setColor(0, 0, 0);
+				}
+			}
+		}
+	};
+	g.draw = function() {
+		tw = 8 * 2;
+		ox = (g.cw - tw * dw) / 2;
+		oy = (g.ch - tw * dh) / 2;
+		g.setColor(0, 0, 0);
+		g.fillRect(0, 0, g.cw, g.ch);
+		for (var i = 0; i < dh; i++) {
+			for (var j = 0; j < dw; j++) {
+				var c = dots[j + i * dw];
+				var x = ox + j * tw;
+				var y = oy + i * tw;
+				drawChar(g, c, x, y, tw, tw);
+//				g.fillRect(x, y, tw, tw);
+			}
+		}
+		if (ledio) {
+			g.setColor(255, 0, 0);
+			g.fillCircle(10, 10, 8);
+			g.setColor(255, 255, 255);
+			g.fillCircle(10 - 3, 10 - 3, 3);
+		}
+	};
+	
+	var cursorx = 0;
+	var cursory = 0;
+	var cls = function() {
+		cursorx = cursory = 0;
+		clearDots();
+	};
+	var putchar = function(c) {
+		if (c >= 0xff61 && c <= 0xff9f) {
+			c -= 0xff00 - 0x40;
+		}
+		if (c == 13 || c == 10) {
+			cursorx = 0;
+			cursory++;
+		} else if (c == 16) {
+			// shift
+		} else if (c == 8) { // backspace
+			if (cursorx > 0) {
+				cursorx--;
+				var p = cursorx + cursory * dw;
+				var p2 = p;
+				while (p2 < dots.length) {
+					if (!dots[p2])
+						break;
+					p2++;
+				}
+				for (var i = p; i < p2; i++) {
+					dots[i] = dots[i + 1];
+				}
+				dots[p2] = 0;
+			}
+		} else {
+			dots[cursorx + cursory * dw] = c;
+			cursorx++;
+			if (cursorx == dw) {
+				cursorx = 0;
+				cursory++;
+			}
+		}
+		if (cursory == dh - 1) {
+			for (var i = 0; i < dh - 1; i++) {
+				for (var j = 0; j < dw; j++)
+					dots[j + i * dw] = dots[j + (i + 1) * dw];
+			}
+			cursory--;
+		}
+	};
+	var puts = function(s) {
+		for (var i = 0; i < s.length; i++) {
+			putchar(s.charCodeAt(i));
+		}
+		g.draw();
+	};
+	
+
+	var locate = function(x, y) {
+		cursorx = x;
+		cursory = y;
+	};
+	var puts = function(s) {
+		for (var i = 0; i < s.length; i++) {
+			putchar(s.charCodeAt(i));
+		}
+	};
+	var gets = function(y) {
+		var s = "";
+		for (var i = 0;; i++) {
+			var c = dots[i + y * dw];
+			if (c == 0)
+				break;
+			s += String.fromCharCode(c);
+		}
+		return s;
+	};
+	var running = false;
+	document.body.onkeydown = function(e) {
+		var key = e.keyCode;
+		if (key == 64 || key == 32) {
+			putchar(32);
+		} else if (key == 45) {
+			putchar(13);
+		} else if (key >= 65 && key <= 65 + 26) {
+			putchar(key + (e.shiftKey ? 32 : 0));
+		} else if (key >= 48 && key <= 57) {
+			putchar(key);
+		} else if (key == 186) {
+			putchar(e.shiftKey ? 58 : 59);
+		} else if (key == 8) {
+			putchar(key);
+		} else if (key == 13) {
+			if (!running) {
+				var s = gets(cursory);
+				putchar(key);
+				var res = tinybasic.execute(s);
+				if (res == 3) {
+					puts(tinybasic.errmes + "\n");
+				}
+			} else {
+				putchar(key);
+			}
+		} else {
+			putchar(key);
+//			debug(key);
+		}
+		g.draw();
+		e.preventDefault();
+	};
+	
+	g.init();
+	
+	tinybasic.io = {
+		led: function(n) { ledio = n; g.draw(); },
+		cls: function() { cls(); },
+	};
+	
+	var s = "IchigoJam Web ver 0.1.0 @taisukef\nOK\n";
+	
+	var hash = document.location.hash;
+	if (hash.length > 1) {
+		s = decodeURIComponent(hash.substring(1));
+	}
+	puts(s);
+	
+	/*
+	locate(5, 0);
+	puts("SCORE: 5  TIME: 4.76");
+	locate(12, 8);
+	puts("5");
+	*/
+	g.draw();
+	
+//	puts(s);
+	
+};
+
+var toHalf = function(s) {
+	var zen = [ "ガ", "ギ", "グ", "ゲ", "ゴ", "ザ", "ジ", "ズ", "ゼ", "ゾ", "ダ", "ヂ", "ヅ", "デ", "ド", "バ", "パ", "ビ", "ピ", "ブ", "プ", "ベ", "ペ", "ボ", "ポ", "ヴ", "ァ", "ア", "ィ", "イ", "ゥ", "ウ", "ェ", "エ", "ォ", "オ", "カ", "キ", "ク", "ケ", "コ", "サ", "シ", "ス", "セ", "ソ", "タ", "チ", "ッ", "ツ", "テ", "ト", "ナ", "ニ", "ヌ", "ネ", "ノ", "ハ", "ヒ", "フ", "ヘ", "ホ", "マ", "ミ", "ム", "メ", "モ", "ャ", "ヤ", "ュ", "ユ", "ョ", "ヨ", "ラ", "リ", "ル", "レ", "ロ", "ワ", "ヲ", "ン", "。", "「", "」", "、", "・", "ー", "゛", "゜" ];
+	var han = [ "ｶﾞ", "ｷﾞ", "ｸﾞ", "ｹﾞ", "ｺﾞ", "ｻﾞ", "ｼﾞ", "ｽﾞ", "ｾﾞ", "ｿﾞ", "ﾀﾞ", "ﾁﾞ", "ﾂﾞ", "ﾃﾞ", "ﾄﾞ", "ﾊﾞ", "ﾊﾟ", "ﾋﾞ", "ﾋﾟ", "ﾌﾞ", "ﾌﾟ", "ﾍﾞ", "ﾍﾟ", "ﾎﾞ", "ﾎﾟ", "ｳﾞ", "ｧ", "ｱ", "ｨ", "ｲ", "ｩ", "ｳ", "ｪ", "ｴ", "ｫ", "ｵ", "ｶ", "ｷ", "ｸ", "ｹ", "ｺ", "ｻ", "ｼ", "ｽ", "ｾ", "ｿ", "ﾀ", "ﾁ", "ｯ", "ﾂ", "ﾃ", "ﾄ", "ﾅ", "ﾆ", "ﾇ", "ﾈ", "ﾉ", "ﾊ", "ﾋ", "ﾌ", "ﾍ", "ﾎ", "ﾏ", "ﾐ", "ﾑ", "ﾒ", "ﾓ", "ｬ", "ﾔ", "ｭ", "ﾕ", "ｮ", "ﾖ", "ﾗ", "ﾘ", "ﾙ", "ﾚ", "ﾛ", "ﾜ", "ｦ", "ﾝ", "｡", "｢", "｣", "､", "･", "ｰ", "ﾞ", "ﾟ" ];
+	var res = "";
+	for (var i = 0; i < s.length; i++) {
+		var c = s.substring(i, i + 1);
+		var flg = false;
+		for (var j = 0; j < zen.length; j++) {
+			if (c == zen[j]) {
+				res += han[j];
+				flg = true;
+				break;
+			}
+		}
+		if (!flg)
+			res += c;
+	}
+	return res;
+};
+var Base64toBlob = function(s) {
+	var tmp = s.split(',');
+	var data = atob(tmp[1]);
+	var mime = tmp[0].split(':')[1].split(';')[0];
+	var arr = new Uint8Array(data.length);
+	for (var i = 0; i < data.length; i++) {
+		arr[i] = data.charCodeAt(i);
+	}
+	return new Blob([arr], { type: mime });
+};
+var saveBlob = function(blob, file) {
+	var url = window.URL || window.webkitURL;
+	var data = url.createObjectURL(blob);
+	var e = document.createEvent("MouseEvents");
+	e.initMouseEvent("click", true, false, window, 0, 0, 0, 0, 0, false, false, false, false, 0, null);
+	var a = document.createElementNS("http://www.w3.org/1999/xhtml", "a");
+	a.href = data;
+	a.download = file;   
+	a.dispatchEvent(e);
+};
+
+var ichigojamfont = "0000000000000000\nffffffffffffffff\n55aa55aa55aa55aa\naaaaaaaaaaaaaaaa\nff00ff00ff00ff00\n18183c5a5a242466\n00187e99183c2466\n00181a7e501c1466\n1818101010101018\n0018587e0a182e62\n1818080808080818\n3c66c38181c3663c\n3c4281a5817e2466\n007e7e7e7e7e7e00\n007e424242427e00\n085a6cfe3c7e4a11\n1c2626262626261c\n181818ffff000000\n000000ffff181818\n181818f8f8181818\n1818181f1f181818\n181818ffff181818\n1818181818181818\n000000ffff000000\n0000001f1f181818\n000000f8f8181818\n1818181f1f000000\n181818f8f8000000\n183878ffff783818\n181c1effff1e1c18\n183c7effff181818\n181818ffff7e3c18\n0000000000000000\n2020202020002000\n5050000000000000\n5050f850f8505000\n2078a07028f02000\nc0c8102040981800\n40a0a040a8906800\n1020400000000000\n1020404040201000\n4020101010204000\n20a8702070a82000\n002020f820200000\n0000000000202040\n000000f800000000\n0000000000606000\n0000081020408000\n708898a8c8887000\n2060a0202020f800\n7088080830c0f800\n7088083008887000\n3050909090f81000\nf880f00808887000\n7080f08888887000\nf888081010202000\n7088887088887000\n7088888878087000\n0000200000200000\n0000200000202040\n1020408040201000\n0000f800f8000000\n4020100810204000\n7088881020002000\n70880868a8a87000\n70888888f8888800\nf04848704848f000\n7088808080887000\nf04848484848f000\nf88080f88080f800\nf88080f880808000\n7088808098887800\n888888f888888800\n7020202020207000\n3810101010906000\n8890a0c0a0908800\n808080808080f800\n88d8d8a8a8a88800\n88c8c8a898988800\n7088888888887000\nf0888888f0808000\n70888888a8906800\nf0888888f0908800\n7088807008887000\nf820202020202000\n8888888888887000\n8888505050202000\n8888a8a8a8505000\n8888502050888800\n8888502020202000\nf80810204080f800\n7040404040407000\n8850f820f8202000\n7010101010107000\n2050880000000000\n000000000000f800\n4020100000000000\n0000700878887400\n8080b0c88888f000\n0000708880887000\n0808689888887800\n00007088f8807000\n304040f840404000\n0000748888780870\n8080b0c888888800\n2000602020202000\n1000301010101060\n4040485060504800\n6020202020203000\n0000f0a8a8a8a800\n0000f08888888800\n0000708888887000\n0000708888f08080\n0000708888780808\n0000b0c880808000\n000078807008f000\n4040f84040403000\n0000909090906800\n0000888850502000\n000088a8a8505000\n0000885020508800\n00008888505020c0\n0000f8102040f800\n1820204020201800\n2020202020202000\nc02020102020c000\n40a8100000000000\n0000000000000000\n0000000000000000\n0000000000000000\n0000000000000000\n0000000000000000\n0000000000000000\n0000000000000000\n0000000000000000\n0000000000000000\n0000000000000000\n0000000000000000\n0000000000000000\n0000000000000000\n0000000000000000\n0000000000000000\n0000000000000000\n0000000000000000\n0000000000000000\n0000000000000000\n0000000000000000\n0000000000000000\n0000000000000000\n0000000000000000\n0000000000000000\n0000000000000000\n0000000000000000\n0000000000000000\n0000000000000000\n0000000000000000\n0000000000000000\n0000000000000000\n0000000000000000\n0000000000000000\n0000000000000000\n0000000038283800\n3820200000000000\n0000000008083800\n0000000020100800\n0000003030000000\n007e027e02043800\n00007c0410102000\n0000083050101000\n0000107c44041800\n0000007c10107c00\n0000087c18284800\n0000207c24101000\n0000003808087c00\n0000380838083800\n0000005454041800\n000000fe00000000\nfe02141010106000\n041830d010101000\n10fe828204043800\n007c10101010fe00\n04fe0c141424c400\n107e122222224600\n10fe1010fe101000\n7c44840408083000\n407e880808087000\n00fc04040404fc00\n44fe444404083000\n0072027202047800\nfe0204081028c600\n40fe424440403e00\n4242222204041800\n7c4464940c083000\n0c7010fe10106000\n0052525202041800\n7c00fe0808087000\n2020203824202000\n08087e0808087000\n00007c000000fe00\nfe0222140814e200\n10fe0c1038d61000\n020202040418e000\n0028282844448200\n404e704040403e00\nfe02020404087000\n0000205088040200\n10fe101054929200\nfe02024428100800\n700e601806700e00\n1010202044fe0200\n040448281028c400\n7c2020fe20201c00\n20fe222410101000\n007c04040808fe00\n007c047c04047c00\n7c00fe0204043800\n4444444404041800\n282828284a4c8800\n2020202224283000\n00fc84848484fc00\nfe82820204083000\n008242220408f000\n2090400000000000\ne0a0e00000000000\n0000000000000000\n0000000000000000\n0000000000000000\n0000000000000000\n0000000000000000\n0000000000000000\n0000000000000000\n0000000000000000\n0000000000000000\n0000000000000000\n0000000000000000\n0000000000000000\n0000000000000000\n0000000000000000\n0000000000000000\n0000000000000000\n0000000000000000\n0000000000000000\n0000000000000000\n0000000000000000\n0000000000000000\n0000000000000000\n0000000000000000\n0000000000000000\n0000000000000000\n0000000000000000\n0000000000000000\n0000000000000000\n0000000000000000\n0000000000000000\n0000000000000000\n0000000000000000";
+</script>
+<style>
+body {
+	margin: 10px;
+	text-align: center;
+}
+#canvas {
+	display: inline-block;
+	width: 610px;
+	height: 462px;
+}
+a {
+	color: black !important;
+}
+</style>
+</head>
+<body>
+
+<canvas id="canvas"></canvas><br>
+<br>
+使えるコマンド<br>
+LED [n] - LED点灯(0以外で点灯、0で消灯)<br>
+CLS - 画面消去<br>
+<br>
+➔ <a href=http://ichigojam.net/ target=_blank>こどもパソコン IchigoJam</a><br>
+
+<div id='credit'>
+<a href='http://fukuno.jig.jp/894'>APP: CC BY fukuno.jig.jp</a>
+</div>
+</div></div>
+
+</body>
+</html>
